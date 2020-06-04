@@ -1,0 +1,176 @@
+---
+title: "Gender Pay Gap analysis"
+---
+
+
+
+```{r}
+library("readxl")
+data_1 <- read_xlsx(file.choose())
+
+```
+
+dim(data_1)
+
+str(data_1)
+
+
+for the sake of exploring the data, we can see what percentage of people have low_paid jobs:
+
+```{r}
+table(data_1$Job_type)
+
+
+(table(data_1$Job_type)=="Low_Paid")/((table(data_1$Job_type)=="LowPaid")+ (table(data_1$Job_type)=="High_Paid"))
+
+summary (data_1)
+
+```
+
+checking the number of missing values per column 
+
+```{r}
+colSums(is.na(data_1))  
+# no missing values present
+```
+
+ Bivariate Analysis through visualizations:
+
+```{r}
+# salary and Gender
+
+library(ggplot2)
+
+viz1 <- ggplot(data = data_1, aes(y=salary, x= Gender)) + geom_boxplot() + facet_wrap(~Job_type)
+
+viz1
+```
+
+ more analysis can be done by seeing the actual mean, median, and mode
+ but from the visualizations, it can also be seen that taking the median salary (in the subcategories of high paid and low paid), male have a higher salary as compared to females.
+
+```{r}
+# Linear regression with job type and gender
+
+lmmodel_1 <- lm (salary ~ Job_type+Gender, data = data_1)
+summary(lmmodel_1)
+
+```
+ all variables all highly significant and we can interpret it as MAles earn $4.15 more than Females. Whoa, clear indication of gender gap .
+
+
+ Visualtions that shows correlations with the variables:
+
+```{r}
+library(ggplot2)
+
+viz2 <- ggplot(data = data_1, aes(y = salary, x = workAmount, color = Gender, group = Gender)) +
+    theme_bw() +
+    geom_point(alpha = 0.2) +
+    geom_smooth(method = "lm", se = FALSE) +
+    facet_wrap(~Job_type)  # facet_wrap used when using multiple visualizations
+viz2
+
+```
+From the visualization, it can be seen that per amount of work done, females are paid more, hence again gap in the payment. This also shows a positive correlation, but should not be confused with causation.
+
+```{r}
+# creating linear model taking into consideration the work amount also
+
+lmmodel_2 <- lm (salary ~ Job_type+Gender+workAmount, data = data_1)
+summary(lmmodel_2)
+
+```
+The Coefficients value also state the same that males earn less ($2.91K per year) per work amount as compared to females. Also, in the statistics, since the regression lines are not parallel, so this also shows there is a gap in the salary and its not same.
+
+Imp -> Since there seems to be some interaction between gender and work amount (as seen from the previous graph), so we can use interaction term in our regression model to see the relation.
+
+```{r}
+lmmodel_3 <- lm (salary ~ Job_type+Gender*workAmount, data = data_1)
+summary(lmmodel_3)
+```
+from the above linera model, we can see that males earn less per work amount as compared to females.
+
+Now using Random Forest to estimate the predictive performance or in other words, we need to see if we can predict salary from all the other predictors.
+
+```{r}
+library(caret)
+
+rf_model <- train(salary~Job_type + Gender + workAmount, data = data_1,
+                    method = "rf", tuneLength = 2, ntree = 2000,
+                    trControl = trainControl(method = "cv", number = 10, verboseIter = FALSE))
+
+rf_model
+```
+
+```{r}
+
+library(randomForest)
+m1 <- randomForest(salary~. , data=data_1)
+
+getTree(m1,1)
+
+# but this should not be used because we have not split the data into training and test set. So first we should split it into traing and test set and then prepare the model.
+```
+
+Splitting the data into training and test (although we have just 200 records and overfitting chances are less even if we do not split into training an dtest model)
+
+```{r}
+
+library(fastDummies)
+results_dummy_1 <- dummy_cols(data_1, remove_most_frequent_dummy = T) # the one which has the highest frequency will not be shown among all its levels
+
+names(results_dummy_1) # just to ensure taht all the names are correct
+
+```
+
+
+```{r}
+results_dummy_1 [,c("Gender","Job_type")] <- list(NULL)
+
+names(results_dummy_1)
+
+# since from these we created the dummy variables and hence we dont need these actual variables now
+```
+
+```{r}
+
+library(caret)
+# splitting the data into train test split
+results_dummy_1 <- results_dummy_1[sample(nrow(results_dummy_1)),] # shuffle the data as per rows
+
+#dummy index
+
+trainIndex_1 <- createDataPartition(results_dummy_1$salary, p=0.7, list = FALSE)
+
+x_train_1<- results_dummy_1[trainIndex_1,] # get all the columns but onlky those rows that match the ones in trainIndex
+x_test_1 <- results_dummy_1[-trainIndex_1,]
+
+dim(x_train_1) # As seen, 140 records are set to training data and remaining 60 are set to testing data
+dim(x_test_1)
+
+```
+
+Creating Random Forest on training data
+
+```{r}
+library(randomForest)
+r_model_1 <- randomForest(salary~., data=x_train_1)
+
+r_model_1 # since its a regression model only where we need to predict the salary (i.e. the continuous variable, so type of random Forest : Regression )
+```
+
+Feature Importance of various variables using iml package
+
+```{r}
+library(iml)
+
+importance(r_model_1)
+varImpPlot(r_model_1, type = 2)
+```
+
+From feature importance, it can be seen that gender does not make much of a difference in predicting the salary outcome. 
+
+So the HR team should prepare such an organization structure where the salary is distributed as per the amount of work that is done. Moreover, the discrimination in the gap analysis can also be analysed taking into consideration data from various departments (which is also one of the best practices to do modelling in people analytics) and various other columns like age, number of promotions, percentage hike, amount of hours spent, relevant courses etc.
+
+This model was created taking into account the dummy data and did not intend to discriminate or negate the gender gap but encourage to use such predictive models to introduce a predictive framework.
